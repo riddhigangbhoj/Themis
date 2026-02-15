@@ -8,6 +8,8 @@ interface ToolEvent {
   name: string;
   input?: string;
   output?: string;
+  startedAt?: number;
+  timedOut?: boolean;
 }
 
 interface Message {
@@ -90,13 +92,15 @@ export default function Home() {
                   const sa = { ...updated[j], toolEvents: [...(updated[j].toolEvents || [])] };
                   if (inner.type === "tool_start") {
                     const cmdStr = inner.input?.command || JSON.stringify(inner.input);
-                    sa.toolEvents.push({ name: inner.name, input: cmdStr });
+                    sa.toolEvents.push({ name: inner.name, input: cmdStr, startedAt: Date.now() });
                   } else if (inner.type === "tool_end") {
                     const outputStr = inner.output?.output || inner.output?.error || JSON.stringify(inner.output);
                     // Attach output to last tool event without output
                     for (let k = sa.toolEvents.length - 1; k >= 0; k--) {
                       if (!sa.toolEvents[k].output) {
-                        sa.toolEvents[k] = { ...sa.toolEvents[k], output: outputStr };
+                        const elapsed = sa.toolEvents[k].startedAt ? Date.now() - sa.toolEvents[k].startedAt! : 0;
+                        const timedOut = elapsed > 20000;
+                        sa.toolEvents[k] = { ...sa.toolEvents[k], output: outputStr, timedOut };
                         break;
                       }
                     }
@@ -264,12 +268,12 @@ function SubAgentBlock({
             <div className="px-3 py-2 space-y-2">
               <div className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-text-tertiary">Tool Calls</div>
               {toolEvents.map((te, i) => (
-                <ToolBlock key={i} name={te.name} input={te.input} output={te.output} />
+                <ToolBlock key={i} name={te.name} input={te.input} output={te.output} timedOut={te.timedOut} />
               ))}
             </div>
           )}
 
-          {result && done && (
+          {result && (
             <div className="border-t border-primary/10 px-3 py-2">
               <div className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-text-tertiary">Agent Response</div>
               <div className="prose-themis text-xs text-foreground">
@@ -287,7 +291,7 @@ function SubAgentBlock({
   );
 }
 
-function ToolBlock({ name, input, output }: { name: string; input?: string; output?: string }) {
+function ToolBlock({ name, input, output, timedOut }: { name: string; input?: string; output?: string; timedOut?: boolean }) {
   const [open, setOpen] = useState(true);
 
   return (
@@ -316,6 +320,11 @@ function ToolBlock({ name, input, output }: { name: string; input?: string; outp
               <pre className="max-h-40 overflow-auto whitespace-pre-wrap break-all rounded bg-black/[0.03] px-1.5 py-1 font-mono text-[11px] text-foreground">
                 {output}
               </pre>
+            </div>
+          )}
+          {timedOut && (
+            <div className="border-t border-border-light px-2 py-1.5 text-[11px] font-medium text-amber-600">
+              Tool took more than 20 seconds, please use a lighter query.
             </div>
           )}
           {!output && (

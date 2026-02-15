@@ -1,3 +1,6 @@
+import asyncio
+import functools
+
 import duckdb
 
 from backend.config import DATA_DIR
@@ -48,14 +51,39 @@ class DuckDBTool(BaseTool):
         if first_word not in ("SELECT", "DESCRIBE", "SHOW", "EXPLAIN", "WITH", "FROM"):
             return ToolResponse(success=False, data={}, error="Only read-only queries are allowed")
 
-        try:
+        def _run_query(q: str):
             conn = duckdb.connect(":memory:")
-            result = conn.execute(query)
+            result = conn.execute(q)
             columns = [desc[0] for desc in result.description]
             rows = result.fetchall()
             conn.close()
+            return columns, rows
+
+        try:
+            loop = asyncio.get_running_loop()
+            columns, rows = await asyncio.wait_for(
+                loop.run_in_executor(None, functools.partial(_run_query, query)),
+                timeout=20,
+            )
+        except TimeoutError:
+            return ToolResponse(
+                success=False,
+                data={},
+                error=(
+                    "Query timed out after 20 seconds. Your query is scanning too many files — "
+                    "narrow the glob pattern to a specific partition "
+                    "(e.g. year=YYYY/court=XX_YY/bench=NAME/*.json) instead of using broad wildcards. "
+                    "Add a LIMIT clause and try a lighter query."
+                ),
+            )
         except Exception as e:
             return ToolResponse(success=False, data={}, error=str(e))
+
+        if not rows:
+            return ToolResponse(
+                success=True,
+                data={"output": "(no results) The query returned 0 rows. Try adjusting your search or query.", "row_count": 0},
+            )
 
         # Format as text table
         output = "\t".join(columns) + "\n"

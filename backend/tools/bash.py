@@ -59,11 +59,20 @@ class BashTool(BaseTool):
         )
 
         try:
-            stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=120)
+            stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=20)
         except TimeoutError:
             proc.kill()
             await proc.wait()
-            return ToolResponse(success=False, data={}, error="Command timed out after 120 seconds")
+            return ToolResponse(
+                success=False,
+                data={},
+                error=(
+                    "Command timed out after 20 seconds. Your query is too broad — "
+                    "narrow it down by targeting a specific partition "
+                    "(e.g. year=YYYY/court=XX_YY/bench=NAME/*.json) instead of scanning everything. "
+                    "Try a lighter, more targeted command."
+                ),
+            )
 
         output = stdout.decode()
         if len(output) > MAX_OUTPUT_LENGTH:
@@ -72,6 +81,12 @@ class BashTool(BaseTool):
         if proc.returncode != 0:
             err = stderr.decode()
             return ToolResponse(success=False, data={"stderr": err, "stdout": output}, error=err)
+
+        if not output.strip():
+            return ToolResponse(
+                success=True,
+                data={"output": "(no results) The command returned empty output. Try a different search or adjust your query."},
+            )
 
         return ToolResponse(success=True, data={"output": output})
 

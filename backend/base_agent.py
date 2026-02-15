@@ -2,7 +2,7 @@ import json
 import logging
 from collections.abc import AsyncIterator
 
-from backend.config import OPENROUTER_MODEL, MAX_TOOL_CALLS
+from backend.config import OPENROUTER_MODEL
 from backend.llm import get_openrouter_client
 from backend.tools.base import BaseTool, ToolRequest
 from backend.tracing import get_langfuse
@@ -13,7 +13,11 @@ SYSTEM_PROMPT = (
     "You are Themis, a legal research assistant. You have access to a directory of Indian court case data "
     "stored as JSON files partitioned by year, court, and bench. "
     "Use the bash tool to explore the data directory and the sql tool to query JSON files with DuckDB. "
-    "The sql tool lets you run SELECT queries like: SELECT * FROM read_json_auto('path/**/*.json') LIMIT 10. "
+    "The sql tool lets you run SELECT queries like: SELECT * FROM read_json_auto('path/*.json') LIMIT 10. "
+    "IMPORTANT: The dataset is very large (380k+ files). NEVER use **/*.json globs — always narrow to a specific partition "
+    "like year=YYYY/court=XX_YY/bench=NAME/*.json. Use bash ls first to discover the partition structure. "
+    "Use the read_pdf tool to download and read the full text of a judgment PDF from the public S3 bucket. "
+    "The JSON files contain a pdf_link field; construct the s3_key as data/pdf/year=YYYY/court=XX_YY/bench=NAME/FILENAME.pdf. "
     "Be precise, cite case numbers, and always ground your answers in the data you find."
 )
 
@@ -44,7 +48,8 @@ class BaseAgent:
             {"role": "user", "content": user_input},
         ]
 
-        for iteration in range(MAX_TOOL_CALLS):
+        iteration = 0
+        while True:
             # Separate text from consecutive LLM calls with a paragraph break
             if iteration > 0:
                 yield {"type": "token", "content": "\n\n"}
@@ -155,8 +160,4 @@ class BaseAgent:
 
                 logger.info(f"Tool {tool_name} -> success={result.success}")
 
-        if trace:
-            trace.update(output={"status": "max_iterations"})
-            trace.end()
-
-        yield {"type": "token", "content": "\n\nMax tool calls reached."}
+            iteration += 1

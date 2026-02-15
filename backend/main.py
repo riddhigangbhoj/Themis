@@ -12,6 +12,7 @@ from backend.base_agent import BaseAgent
 from backend.planner_agent import PlannerAgent
 from backend.tools.bash import BashTool
 from backend.tools.duckdb_tool import DuckDBTool
+from backend.tools.pdf_tool import PDFTool
 
 app = FastAPI()
 
@@ -22,7 +23,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-base_agent = BaseAgent(tools=[BashTool(), DuckDBTool()])
+base_agent = BaseAgent(tools=[BashTool(), DuckDBTool(), PDFTool()])
 planner = PlannerAgent(base_agent=base_agent)
 logger.info("Themis started: PlannerAgent -> BaseAgent")
 
