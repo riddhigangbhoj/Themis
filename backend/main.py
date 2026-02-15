@@ -33,6 +33,11 @@ class QueryRequest(BaseModel):
     input: str
 
 
+@app.get("/health")
+async def health():
+    return {"status": "ok", "service": "themis"}
+
+
 @app.post("/query")
 async def query(request: QueryRequest):
     async def stream():

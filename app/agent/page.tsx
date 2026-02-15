@@ -1,9 +1,10 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
-import { Scales, ArrowUp, Terminal, Robot } from "@phosphor-icons/react";
+import { Scales, ArrowUp, Terminal, Robot, GearSix, Check } from "@phosphor-icons/react";
 import ReactMarkdown from "react-markdown";
 import Link from "next/link";
+import { useBackendUrl } from "../use-backend-url";
 
 interface ToolEvent {
   name: string;
@@ -29,6 +30,13 @@ export default function AgentPage() {
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const { backendUrl, updateUrl } = useBackendUrl();
+  const [showSettings, setShowSettings] = useState(false);
+  const [urlDraft, setUrlDraft] = useState(backendUrl);
+
+  useEffect(() => {
+    setUrlDraft(backendUrl);
+  }, [backendUrl]);
 
   useEffect(() => {
     scrollRef.current?.scrollTo(0, scrollRef.current.scrollHeight);
@@ -46,7 +54,7 @@ export default function AgentPage() {
     setMessages((prev) => [...prev, { role: "assistant", content: "" }]);
 
     try {
-      const res = await fetch("http://localhost:8000/query", {
+      const res = await fetch(`${backendUrl}/query`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ input: text }),
@@ -168,13 +176,50 @@ export default function AgentPage() {
 
   return (
     <div className="flex h-dvh flex-col bg-background">
-      <header className="flex h-14 shrink-0 items-center border-b border-border-light px-6">
+      <header className="flex h-14 shrink-0 items-center justify-between border-b border-border-light px-6">
         <Link href="/" className="flex items-center gap-2">
           <Scales size={20} weight="thin" className="text-primary" />
           <span className="font-serif text-lg text-heading tracking-tight">
             Themis
           </span>
         </Link>
+        <div className="relative">
+          <button
+            onClick={() => setShowSettings(!showSettings)}
+            className="flex h-8 w-8 items-center justify-center rounded-lg text-text-tertiary hover:bg-black/[0.04] hover:text-foreground transition-colors"
+            title="Backend settings"
+          >
+            <GearSix size={18} weight="regular" />
+          </button>
+          {showSettings && (
+            <div className="absolute right-0 top-10 z-50 w-80 rounded-lg border border-border-light bg-white p-4 shadow-lg">
+              <label className="mb-1.5 block text-xs font-medium text-text-secondary">
+                Backend URL
+              </label>
+              <div className="flex items-center gap-2">
+                <input
+                  type="text"
+                  value={urlDraft}
+                  onChange={(e) => setUrlDraft(e.target.value)}
+                  placeholder="http://localhost:8000"
+                  className="flex-1 rounded-md border border-border-light bg-background px-2.5 py-1.5 font-mono text-xs text-foreground outline-none focus:border-primary/40"
+                />
+                <button
+                  onClick={() => {
+                    updateUrl(urlDraft);
+                    setShowSettings(false);
+                  }}
+                  className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-primary text-white hover:bg-primary-dark transition-colors"
+                >
+                  <Check size={14} weight="bold" />
+                </button>
+              </div>
+              <p className="mt-2 text-[11px] text-text-tertiary">
+                Paste your ngrok or remote backend URL here.
+              </p>
+            </div>
+          )}
+        </div>
       </header>
 
       {messages.length === 0 ? (
