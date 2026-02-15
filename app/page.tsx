@@ -1,65 +1,117 @@
-import Image from "next/image";
+"use client";
+
+import { useState } from "react";
+import { Scales, ArrowUp } from "@phosphor-icons/react";
+
+interface Message {
+  role: "user" | "assistant";
+  content: string;
+}
 
 export default function Home() {
-  return (
-    <div className="flex min-h-screen items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex min-h-screen w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [input, setInput] = useState("");
+
+  function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    const text = input.trim();
+    if (!text) return;
+
+    setMessages((prev) => [...prev, { role: "user", content: text }]);
+    setInput("");
+
+    // Placeholder assistant response
+    setTimeout(() => {
+      setMessages((prev) => [
+        ...prev,
+        { role: "assistant", content: "This is a placeholder response. The backend is not connected yet." },
+      ]);
+    }, 500);
+  }
+
+  const inputBar = (
+    <form
+      onSubmit={handleSubmit}
+      className="flex w-full max-w-2xl items-end gap-2"
+    >
+      <div className="relative flex-1">
+        <input
+          type="text"
+          value={input}
+          onChange={(e) => setInput(e.target.value)}
+          placeholder="Ask a legal question..."
+          className="w-full rounded-xl border border-border-light bg-white py-3 pl-4 pr-12 text-base text-foreground outline-none placeholder:text-text-tertiary focus:border-primary/40"
         />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the page.tsx file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
-          </p>
+        <button
+          type="submit"
+          disabled={!input.trim()}
+          className="absolute right-2 top-1/2 -translate-y-1/2 flex h-8 w-8 items-center justify-center rounded-lg bg-primary text-white transition-opacity disabled:opacity-0"
+        >
+          <ArrowUp size={16} weight="bold" />
+        </button>
+      </div>
+    </form>
+  );
+
+  return (
+    <div className="flex h-dvh flex-col bg-background">
+      {/* Header */}
+      <header className="flex h-14 shrink-0 items-center border-b border-border-light px-6">
+        <div className="flex items-center gap-2">
+          <Scales size={20} weight="thin" className="text-primary" />
+          <span className="font-serif text-lg text-heading tracking-tight">
+            Themis
+          </span>
         </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={16}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
-        </div>
-      </main>
+      </header>
+
+      {messages.length === 0 ? (
+        /* Empty state — input centered */
+        <main className="relative flex flex-1 flex-col items-center px-6">
+          {/* Text above center */}
+          <div className="flex flex-col items-center mt-[25vh]">
+            <Scales size={36} weight="thin" className="text-primary mb-5" />
+            <p className="font-serif text-5xl text-heading tracking-tight">
+              What can I help you research?
+            </p>
+            <p className="mt-3 text-base text-text-tertiary">
+              Ask a legal question to get started.
+            </p>
+          </div>
+          {/* Input at vertical center */}
+          <div className="absolute top-1/2 left-1/2 w-full max-w-2xl -translate-x-1/2 -translate-y-1/2 px-6">
+            {inputBar}
+          </div>
+        </main>
+      ) : (
+        /* Conversation — input at bottom */
+        <>
+          <main className="flex-1 overflow-y-auto">
+            <div className="mx-auto max-w-2xl px-6 py-8">
+              <div className="space-y-6">
+                {messages.map((msg, i) => (
+                  <div key={i} className={msg.role === "user" ? "flex justify-end" : ""}>
+                    <div
+                      className={
+                        msg.role === "user"
+                          ? "max-w-[80%] rounded-2xl rounded-br-sm bg-primary px-4 py-3 text-base text-white"
+                          : "max-w-[80%] text-base leading-relaxed text-foreground"
+                      }
+                    >
+                      {msg.content}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </main>
+          <div className="shrink-0 border-t border-border-light px-6 py-4">
+            <div className="mx-auto max-w-2xl">
+              {inputBar}
+            </div>
+          </div>
+        </>
+      )}
     </div>
   );
 }
