@@ -11,6 +11,7 @@ from pydantic import BaseModel
 from backend.base_agent import BaseAgent
 from backend.planner_agent import PlannerAgent
 from backend.tools.bash import BashTool
+from backend.tools.duckdb_tool import DuckDBTool
 
 app = FastAPI()
 
@@ -21,7 +22,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-base_agent = BaseAgent(tools=[BashTool()])
+base_agent = BaseAgent(tools=[BashTool(), DuckDBTool()])
 planner = PlannerAgent(base_agent=base_agent)
 logger.info("Themis started: PlannerAgent -> BaseAgent")
 

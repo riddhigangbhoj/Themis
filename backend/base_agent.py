@@ -12,7 +12,8 @@ logger = logging.getLogger(__name__)
 SYSTEM_PROMPT = (
     "You are Themis, a legal research assistant. You have access to a directory of Indian court case data "
     "stored as JSON files partitioned by year, court, and bench. "
-    "Use the bash tool to explore the data directory, search for cases, and answer questions. "
+    "Use the bash tool to explore the data directory and the sql tool to query JSON files with DuckDB. "
+    "The sql tool lets you run SELECT queries like: SELECT * FROM read_json_auto('path/**/*.json') LIMIT 10. "
     "Be precise, cite case numbers, and always ground your answers in the data you find."
 )
 
@@ -44,6 +45,10 @@ class BaseAgent:
         ]
 
         for iteration in range(MAX_TOOL_CALLS):
+            # Separate text from consecutive LLM calls with a paragraph break
+            if iteration > 0:
+                yield {"type": "token", "content": "\n\n"}
+
             generation = None
             if trace:
                 generation = trace.start_generation(
