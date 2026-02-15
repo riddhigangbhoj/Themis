@@ -2,6 +2,7 @@
 
 import { useState, useRef, useEffect } from "react";
 import { Scales, ArrowUp, Terminal } from "@phosphor-icons/react";
+import ReactMarkdown from "react-markdown";
 
 interface Message {
   role: "user" | "assistant" | "tool";
@@ -154,15 +155,17 @@ export default function Home() {
                   <div key={i} className={msg.role === "user" ? "flex justify-end" : ""}>
                     {msg.role === "tool" ? (
                       <ToolBlock name={msg.content} input={msg.toolInput} output={msg.toolOutput} />
+                    ) : msg.role === "user" ? (
+                      <div className="max-w-[80%] rounded-2xl rounded-br-sm bg-primary px-4 py-3 text-base text-white">
+                        {msg.content}
+                      </div>
                     ) : (
-                      <div
-                        className={
-                          msg.role === "user"
-                            ? "max-w-[80%] rounded-2xl rounded-br-sm bg-primary px-4 py-3 text-base text-white"
-                            : "max-w-[80%] text-base leading-relaxed text-foreground whitespace-pre-wrap"
-                        }
-                      >
-                        {msg.content || (loading && i === messages.length - 1 ? "Thinking..." : "")}
+                      <div className="prose-themis max-w-[80%] text-base leading-relaxed text-foreground">
+                        {msg.content ? (
+                          <ReactMarkdown>{msg.content}</ReactMarkdown>
+                        ) : (
+                          loading && i === messages.length - 1 ? "Thinking..." : ""
+                        )}
                       </div>
                     )}
                   </div>
