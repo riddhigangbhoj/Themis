@@ -16,6 +16,8 @@ SYSTEM_PROMPT = (
     "The sql tool lets you run SELECT queries like: SELECT * FROM read_json_auto('path/*.json') LIMIT 10. "
     "IMPORTANT: The dataset is very large (380k+ files). NEVER use **/*.json globs — always narrow to a specific partition "
     "like year=YYYY/court=XX_YY/bench=NAME/*.json. Use bash ls first to discover the partition structure. "
+    "Use the search_cases tool for semantic/fuzzy search over 127k cases — it finds cases by meaning "
+    "(e.g. 'property dispute illegal occupation', 'bail for murder'). Use the sql tool for exact/structured queries. "
     "Use the read_pdf tool to download and read the full text of a judgment PDF from the public S3 bucket. "
     "The JSON files contain a pdf_link field; construct the s3_key as data/pdf/year=YYYY/court=XX_YY/bench=NAME/FILENAME.pdf. "
     "Be precise, cite case numbers, and always ground your answers in the data you find."

@@ -1,3 +1,4 @@
+import asyncio
 import json
 import logging
 from collections.abc import AsyncIterator
@@ -12,8 +13,10 @@ logger = logging.getLogger(__name__)
 PLANNER_SYSTEM_PROMPT = (
     "You are Themis, a legal research planner. You do NOT have direct access to data or tools. "
     "You MUST use the research_agent tool to look up any information. "
-    "The research_agent can run bash commands to explore Indian court case data (JSON files partitioned by year, court, and bench). "
+    "The research_agent has access to ChromaDB for semantic search, DuckDB for SQL queries on court case JSON data, and bash as a fallback. "
+    "Instruct it to prefer ChromaDB and DuckDB — they are faster and more reliable. Bash should only be used as a last resort. "
     "Your job: break down the user's question, call research_agent one or more times, then synthesize the results. "
+    "You can launch up to 3 research_agent calls in parallel in a single response to speed up research. "
     "Never answer from memory — always delegate to research_agent first."
 )
 
@@ -118,32 +121,43 @@ class PlannerAgent:
             ]
             messages.append(assistant_msg)
 
-            for tc in tool_calls:
-                if not tc["name"]:
-                    continue
+            # Run all base agents concurrently, streaming events live via queue
+            valid_tcs = [tc for tc in tool_calls if tc["name"]]
+            queue = asyncio.Queue()
+            sub_results = {}  # tc_id -> result text
 
+            async def _run_subagent(tc):
                 tool_input = json.loads(tc["arguments"]) if tc["arguments"] else {}
                 instructions = tool_input.get("instructions", "")
-
-                yield {"type": "subagent_start", "instructions": instructions}
-
-                # Run base agent, forwarding its events prefixed as sub-agent events
+                agent_id = tc["id"]
+                await queue.put({"type": "subagent_start", "agent_id": agent_id, "instructions": instructions})
                 sub_result_text = ""
                 async for event in self.base_agent.run(instructions, parent_span=trace):
                     if event["type"] == "token":
                         sub_result_text += event["content"]
-                    # Forward tool events from sub-agent so UI can display them
-                    yield {"type": "subagent_event", "event": event}
+                    await queue.put({"type": "subagent_event", "agent_id": agent_id, "event": event})
+                await queue.put({"type": "subagent_end", "agent_id": agent_id, "result": sub_result_text})
+                sub_results[agent_id] = sub_result_text
 
-                yield {"type": "subagent_end", "result": sub_result_text}
+            tasks = [asyncio.create_task(_run_subagent(tc)) for tc in valid_tcs]
 
+            # Yield events live as they arrive; stop when all tasks finish
+            done_count = 0
+            while done_count < len(valid_tcs):
+                event = await queue.get()
+                if event["type"] == "subagent_end":
+                    done_count += 1
+                yield event
+
+            await asyncio.gather(*tasks)  # propagate any exceptions
+
+            for tc in valid_tcs:
                 messages.append({
                     "role": "tool",
                     "tool_call_id": tc["id"],
-                    "content": sub_result_text or "Agent completed with no text output.",
+                    "content": sub_results.get(tc["id"], "Agent completed with no text output."),
                 })
-
-                logger.info(f"Sub-agent result: {sub_result_text[:80]}...")
+                logger.info(f"Sub-agent result: {sub_results.get(tc['id'], '')[:80]}...")
 
         if trace:
             trace.update(output={"status": "max_iterations"})

@@ -3,6 +3,7 @@
 import { useState, useRef, useEffect } from "react";
 import { Scales, ArrowUp, Terminal, Robot } from "@phosphor-icons/react";
 import ReactMarkdown from "react-markdown";
+import Link from "next/link";
 
 interface ToolEvent {
   name: string;
@@ -23,7 +24,7 @@ interface Message {
   done?: boolean;
 }
 
-export default function Home() {
+export default function AgentPage() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
@@ -146,43 +147,34 @@ export default function Home() {
       onSubmit={handleSubmit}
       className="flex w-full max-w-2xl items-end gap-2"
     >
-      <textarea
-        value={input}
-        onChange={(e) => {
-          setInput(e.target.value);
-          e.target.style.height = "auto";
-          e.target.style.height = e.target.scrollHeight + "px";
-        }}
-        onKeyDown={(e) => {
-          if (e.key === "Enter" && !e.shiftKey) {
-            e.preventDefault();
-            handleSubmit(e);
-          }
-        }}
-        placeholder="Ask a legal question..."
-        rows={1}
-        className="flex-1 resize-none rounded-xl border border-border-light bg-white py-3 pl-4 pr-4 text-base text-foreground outline-none placeholder:text-text-tertiary focus:border-primary/40"
-        style={{ maxHeight: "200px", overflowY: "auto" }}
-      />
-      <button
-        type="submit"
-        disabled={!input.trim() || loading}
-        className="flex h-8 w-8 shrink-0 items-center justify-center self-center rounded-lg bg-primary text-white transition-opacity disabled:opacity-0"
-      >
-        <ArrowUp size={16} weight="bold" />
-      </button>
+      <div className="relative flex-1">
+        <input
+          type="text"
+          value={input}
+          onChange={(e) => setInput(e.target.value)}
+          placeholder="Ask a legal question..."
+          className="w-full rounded-xl border border-border-light bg-white py-3 pl-4 pr-12 text-base text-foreground outline-none placeholder:text-text-tertiary focus:border-primary/40"
+        />
+        <button
+          type="submit"
+          disabled={!input.trim() || loading}
+          className="absolute right-2 top-1/2 -translate-y-1/2 flex h-8 w-8 items-center justify-center rounded-lg bg-primary text-white transition-opacity disabled:opacity-0"
+        >
+          <ArrowUp size={16} weight="bold" />
+        </button>
+      </div>
     </form>
   );
 
   return (
     <div className="flex h-dvh flex-col bg-background">
       <header className="flex h-14 shrink-0 items-center border-b border-border-light px-6">
-        <div className="flex items-center gap-2">
+        <Link href="/" className="flex items-center gap-2">
           <Scales size={20} weight="thin" className="text-primary" />
           <span className="font-serif text-lg text-heading tracking-tight">
             Themis
           </span>
-        </div>
+        </Link>
       </header>
 
       {messages.length === 0 ? (
@@ -203,13 +195,10 @@ export default function Home() {
       ) : (
         <>
           <main ref={scrollRef} className="flex-1 overflow-y-auto">
-            <div className="mx-auto max-w-5xl px-6 py-8">
-              <div className="grid grid-cols-2 gap-3">
+            <div className="mx-auto max-w-2xl px-6 py-8">
+              <div className="space-y-6">
                 {messages.map((msg, i) => (
-                  <div
-                    key={i}
-                    className={msg.role === "subagent" ? "" : "col-span-2" + (msg.role === "user" ? " flex justify-end" : "")}
-                  >
+                  <div key={i} className={msg.role === "user" ? "flex justify-end" : ""}>
                     {msg.role === "subagent" ? (
                       <SubAgentBlock
                         instructions={msg.instructions}
@@ -268,7 +257,7 @@ function SubAgentBlock({
         <Robot size={14} weight="bold" className="shrink-0" />
         <span className="font-mono">research_agent</span>
         {!done && <span className="ml-1 text-text-tertiary italic">running...</span>}
-        <span className="ml-auto text-text-tertiary">{open ? "−" : "+"}</span>
+        <span className="ml-auto text-text-tertiary">{open ? "\u2212" : "+"}</span>
       </button>
       {open && (
         <div className="border-t border-primary/10">
@@ -317,7 +306,7 @@ function ToolBlock({ name, input, output, timedOut }: { name: string; input?: st
       >
         <Terminal size={12} weight="bold" className="shrink-0 text-primary" />
         <span className="font-mono text-[11px]">{name}</span>
-        <span className="ml-auto text-text-tertiary text-[10px]">{open ? "−" : "+"}</span>
+        <span className="ml-auto text-text-tertiary text-[10px]">{open ? "\u2212" : "+"}</span>
       </button>
       {open && (
         <div className="border-t border-border-light">
