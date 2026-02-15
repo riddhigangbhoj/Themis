@@ -4,38 +4,55 @@ from collections.abc import AsyncIterator
 
 from backend.config import OPENROUTER_MODEL, MAX_TOOL_CALLS
 from backend.llm import get_openrouter_client
-from backend.tools.base import BaseTool, ToolRequest
+from backend.base_agent import BaseAgent
 from backend.tracing import get_langfuse
 
 logger = logging.getLogger(__name__)
 
-SYSTEM_PROMPT = (
-    "You are Themis, a legal research assistant. You have access to a directory of Indian court case data "
-    "stored as JSON files partitioned by year, court, and bench. "
-    "Use the bash tool to explore the data directory, search for cases, and answer questions. "
-    "Be precise, cite case numbers, and always ground your answers in the data you find."
+PLANNER_SYSTEM_PROMPT = (
+    "You are Themis, a legal research planner. You do NOT have direct access to data or tools. "
+    "You MUST use the research_agent tool to look up any information. "
+    "The research_agent can run bash commands to explore Indian court case data (JSON files partitioned by year, court, and bench). "
+    "Your job: break down the user's question, call research_agent one or more times, then synthesize the results. "
+    "Never answer from memory — always delegate to research_agent first."
 )
 
+RESEARCH_AGENT_TOOL = {
+    "type": "function",
+    "function": {
+        "name": "research_agent",
+        "description": "Delegate a research task to the base agent. It can run bash commands to explore court case data. Give it clear, specific instructions about what to find.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "instructions": {
+                    "type": "string",
+                    "description": "Detailed instructions for what the research agent should find or do.",
+                }
+            },
+            "required": ["instructions"],
+        },
+    },
+}
 
-class Agent:
-    def __init__(self, tools: list[BaseTool]):
-        self.tools = {tool.name: tool for tool in tools}
-        self.tool_schemas = [tool.get_schema() for tool in tools]
+
+class PlannerAgent:
+    def __init__(self, base_agent: BaseAgent):
+        self.base_agent = base_agent
 
     async def run(self, user_input: str) -> AsyncIterator[dict]:
         client = get_openrouter_client()
         langfuse = get_langfuse()
 
-        # Top-level trace for this agent run
         trace = None
         if langfuse:
             trace = langfuse.start_span(
-                name="themis-agent",
+                name="themis-planner",
                 input={"user_input": user_input},
             )
 
         messages = [
-            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "system", "content": PLANNER_SYSTEM_PROMPT},
             {"role": "user", "content": user_input},
         ]
 
@@ -43,7 +60,7 @@ class Agent:
             generation = None
             if trace:
                 generation = trace.start_generation(
-                    name=f"llm-call-{iteration}",
+                    name=f"planner-llm-call-{iteration}",
                     model=OPENROUTER_MODEL,
                     input=messages,
                 )
@@ -54,7 +71,7 @@ class Agent:
             stream = await client.chat.completions.create(
                 model=OPENROUTER_MODEL,
                 messages=messages,
-                tools=self.tool_schemas,
+                tools=[RESEARCH_AGENT_TOOL],
                 stream=True,
             )
 
@@ -83,14 +100,12 @@ class Agent:
                 generation.update(output={"response": response_text, "tool_calls": tool_calls})
                 generation.end()
 
-            # No tool calls = final answer
             if not any(tc["name"] for tc in tool_calls):
                 if trace:
                     trace.update(output={"response": response_text})
                     trace.end()
                 return
 
-            # Build assistant message with tool calls
             assistant_msg = {"role": "assistant", "content": response_text or None}
             assistant_msg["tool_calls"] = [
                 {
@@ -103,48 +118,32 @@ class Agent:
             ]
             messages.append(assistant_msg)
 
-            # Execute each tool call
             for tc in tool_calls:
                 if not tc["name"]:
                     continue
 
-                tool_name = tc["name"]
-                tool_id = tc["id"]
-
                 tool_input = json.loads(tc["arguments"]) if tc["arguments"] else {}
+                instructions = tool_input.get("instructions", "")
 
-                tool = self.tools.get(tool_name)
-                if not tool:
-                    messages.append({
-                        "role": "tool",
-                        "tool_call_id": tool_id,
-                        "content": json.dumps({"error": f"Unknown tool: {tool_name}"}),
-                    })
-                    continue
+                yield {"type": "subagent_start", "instructions": instructions}
 
-                yield {"type": "tool_start", "name": tool_name, "input": tool_input}
+                # Run base agent, forwarding its events prefixed as sub-agent events
+                sub_result_text = ""
+                async for event in self.base_agent.run(instructions, parent_span=trace):
+                    if event["type"] == "token":
+                        sub_result_text += event["content"]
+                    # Forward tool events from sub-agent so UI can display them
+                    yield {"type": "subagent_event", "event": event}
 
-                tool_span = None
-                if trace:
-                    tool_span = trace.start_span(name=f"tool-{tool_name}", input=tool_input)
-
-                result = await tool.execute(ToolRequest(parameters=tool_input))
-
-                result_payload = result.data if result.success else {"error": result.error}
-
-                yield {"type": "tool_end", "name": tool_name, "output": result_payload}
-
-                if tool_span:
-                    tool_span.update(output=result_payload)
-                    tool_span.end()
+                yield {"type": "subagent_end", "result": sub_result_text}
 
                 messages.append({
                     "role": "tool",
-                    "tool_call_id": tool_id,
-                    "content": json.dumps(result_payload),
+                    "tool_call_id": tc["id"],
+                    "content": sub_result_text or "Agent completed with no text output.",
                 })
 
-                logger.info(f"Tool {tool_name} -> success={result.success}")
+                logger.info(f"Sub-agent result: {sub_result_text[:80]}...")
 
         if trace:
             trace.update(output={"status": "max_iterations"})

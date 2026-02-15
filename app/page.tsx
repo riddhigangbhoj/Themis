@@ -1,14 +1,23 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
-import { Scales, ArrowUp, Terminal } from "@phosphor-icons/react";
+import { Scales, ArrowUp, Terminal, Robot } from "@phosphor-icons/react";
 import ReactMarkdown from "react-markdown";
 
+interface ToolEvent {
+  name: string;
+  input?: string;
+  output?: string;
+}
+
 interface Message {
-  role: "user" | "assistant" | "tool";
+  role: "user" | "assistant" | "subagent";
   content: string;
-  toolInput?: string;
-  toolOutput?: string;
+  // sub-agent fields
+  instructions?: string;
+  toolEvents?: ToolEvent[];
+  subagentResult?: string;
+  done?: boolean;
 }
 
 export default function Home() {
@@ -55,31 +64,60 @@ export default function Home() {
           if (!line.startsWith("data: ")) continue;
           const event = JSON.parse(line.slice(6));
 
-          if (event.type === "tool_start") {
-            const cmdStr = event.input?.command || JSON.stringify(event.input);
-            setMessages((prev) => [
-              ...prev,
-              { role: "tool", content: event.name, toolInput: cmdStr },
-              { role: "assistant", content: "" },
-            ]);
-          } else if (event.type === "tool_end") {
-            const outputStr = event.output?.output || event.output?.error || JSON.stringify(event.output);
+          if (event.type === "token") {
             setMessages((prev) => {
               const updated = [...prev];
-              // Find the last tool message to attach output
+              const last = updated[updated.length - 1];
+              if (last.role === "assistant") {
+                updated[updated.length - 1] = { ...last, content: last.content + event.content };
+              }
+              return updated;
+            });
+          } else if (event.type === "subagent_start") {
+            // Insert a subagent message, then a new assistant message after it
+            setMessages((prev) => [
+              ...prev,
+              { role: "subagent", content: "", instructions: event.instructions, toolEvents: [], done: false },
+              { role: "assistant", content: "" },
+            ]);
+          } else if (event.type === "subagent_event") {
+            const inner = event.event;
+            setMessages((prev) => {
+              const updated = [...prev];
+              // Find last subagent message
               for (let j = updated.length - 1; j >= 0; j--) {
-                if (updated[j].role === "tool" && !updated[j].toolOutput) {
-                  updated[j] = { ...updated[j], toolOutput: outputStr };
+                if (updated[j].role === "subagent" && !updated[j].done) {
+                  const sa = { ...updated[j], toolEvents: [...(updated[j].toolEvents || [])] };
+                  if (inner.type === "tool_start") {
+                    const cmdStr = inner.input?.command || JSON.stringify(inner.input);
+                    sa.toolEvents.push({ name: inner.name, input: cmdStr });
+                  } else if (inner.type === "tool_end") {
+                    const outputStr = inner.output?.output || inner.output?.error || JSON.stringify(inner.output);
+                    // Attach output to last tool event without output
+                    for (let k = sa.toolEvents.length - 1; k >= 0; k--) {
+                      if (!sa.toolEvents[k].output) {
+                        sa.toolEvents[k] = { ...sa.toolEvents[k], output: outputStr };
+                        break;
+                      }
+                    }
+                  } else if (inner.type === "token") {
+                    sa.content = (sa.content || "") + inner.content;
+                  }
+                  updated[j] = sa;
                   break;
                 }
               }
               return updated;
             });
-          } else if (event.type === "token") {
+          } else if (event.type === "subagent_end") {
             setMessages((prev) => {
               const updated = [...prev];
-              const last = updated[updated.length - 1];
-              updated[updated.length - 1] = { ...last, content: last.content + event.content };
+              for (let j = updated.length - 1; j >= 0; j--) {
+                if (updated[j].role === "subagent" && !updated[j].done) {
+                  updated[j] = { ...updated[j], done: true, subagentResult: event.result };
+                  break;
+                }
+              }
               return updated;
             });
           }
@@ -153,8 +191,13 @@ export default function Home() {
               <div className="space-y-6">
                 {messages.map((msg, i) => (
                   <div key={i} className={msg.role === "user" ? "flex justify-end" : ""}>
-                    {msg.role === "tool" ? (
-                      <ToolBlock name={msg.content} input={msg.toolInput} output={msg.toolOutput} />
+                    {msg.role === "subagent" ? (
+                      <SubAgentBlock
+                        instructions={msg.instructions}
+                        toolEvents={msg.toolEvents || []}
+                        result={msg.content}
+                        done={msg.done}
+                      />
                     ) : msg.role === "user" ? (
                       <div className="max-w-[80%] rounded-2xl rounded-br-sm bg-primary px-4 py-3 text-base text-white">
                         {msg.content}
@@ -184,39 +227,99 @@ export default function Home() {
   );
 }
 
+function SubAgentBlock({
+  instructions,
+  toolEvents,
+  result,
+  done,
+}: {
+  instructions?: string;
+  toolEvents: ToolEvent[];
+  result?: string;
+  done?: boolean;
+}) {
+  const [open, setOpen] = useState(true);
+
+  return (
+    <div className="w-full rounded-lg border border-primary/20 bg-primary/[0.03] overflow-hidden">
+      <button
+        onClick={() => setOpen(!open)}
+        className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs font-medium text-primary hover:bg-primary/[0.05]"
+      >
+        <Robot size={14} weight="bold" className="shrink-0" />
+        <span className="font-mono">research_agent</span>
+        {!done && <span className="ml-1 text-text-tertiary italic">running...</span>}
+        <span className="ml-auto text-text-tertiary">{open ? "−" : "+"}</span>
+      </button>
+      {open && (
+        <div className="border-t border-primary/10">
+          {instructions && (
+            <div className="px-3 py-2 border-b border-primary/10">
+              <div className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-text-tertiary">Instructions</div>
+              <p className="text-xs text-foreground">{instructions}</p>
+            </div>
+          )}
+
+          {toolEvents.length > 0 && (
+            <div className="px-3 py-2 space-y-2">
+              <div className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-text-tertiary">Tool Calls</div>
+              {toolEvents.map((te, i) => (
+                <ToolBlock key={i} name={te.name} input={te.input} output={te.output} />
+              ))}
+            </div>
+          )}
+
+          {result && done && (
+            <div className="border-t border-primary/10 px-3 py-2">
+              <div className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-text-tertiary">Agent Response</div>
+              <div className="prose-themis text-xs text-foreground">
+                <ReactMarkdown>{result}</ReactMarkdown>
+              </div>
+            </div>
+          )}
+
+          {!done && toolEvents.length === 0 && (
+            <div className="px-3 py-2 text-xs italic text-text-tertiary">Starting...</div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function ToolBlock({ name, input, output }: { name: string; input?: string; output?: string }) {
   const [open, setOpen] = useState(true);
 
   return (
-    <div className="w-full rounded-lg border border-border-light bg-surface overflow-hidden">
+    <div className="w-full rounded border border-border-light bg-surface overflow-hidden">
       <button
         onClick={() => setOpen(!open)}
-        className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs font-medium text-text-secondary hover:bg-black/[0.02]"
+        className="flex w-full items-center gap-2 px-2 py-1.5 text-left text-xs font-medium text-text-secondary hover:bg-black/[0.02]"
       >
-        <Terminal size={14} weight="bold" className="shrink-0 text-primary" />
-        <span className="font-mono">{name}</span>
-        <span className="ml-auto text-text-tertiary">{open ? "−" : "+"}</span>
+        <Terminal size={12} weight="bold" className="shrink-0 text-primary" />
+        <span className="font-mono text-[11px]">{name}</span>
+        <span className="ml-auto text-text-tertiary text-[10px]">{open ? "−" : "+"}</span>
       </button>
       {open && (
         <div className="border-t border-border-light">
           {input && (
-            <div className="px-3 py-2">
-              <div className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-text-tertiary">Input</div>
-              <pre className="overflow-x-auto whitespace-pre-wrap break-all rounded bg-black/[0.03] px-2 py-1.5 font-mono text-xs text-foreground">
+            <div className="px-2 py-1.5">
+              <div className="mb-0.5 text-[9px] font-semibold uppercase tracking-wider text-text-tertiary">Input</div>
+              <pre className="overflow-x-auto whitespace-pre-wrap break-all rounded bg-black/[0.03] px-1.5 py-1 font-mono text-[11px] text-foreground">
                 {input}
               </pre>
             </div>
           )}
           {output && (
-            <div className="border-t border-border-light px-3 py-2">
-              <div className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-text-tertiary">Output</div>
-              <pre className="max-h-60 overflow-auto whitespace-pre-wrap break-all rounded bg-black/[0.03] px-2 py-1.5 font-mono text-xs text-foreground">
+            <div className="border-t border-border-light px-2 py-1.5">
+              <div className="mb-0.5 text-[9px] font-semibold uppercase tracking-wider text-text-tertiary">Output</div>
+              <pre className="max-h-40 overflow-auto whitespace-pre-wrap break-all rounded bg-black/[0.03] px-1.5 py-1 font-mono text-[11px] text-foreground">
                 {output}
               </pre>
             </div>
           )}
           {!output && (
-            <div className="px-3 py-2 text-xs italic text-text-tertiary">Running...</div>
+            <div className="px-2 py-1.5 text-[11px] italic text-text-tertiary">Running...</div>
           )}
         </div>
       )}
