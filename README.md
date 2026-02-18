@@ -30,7 +30,7 @@ You describe your case. Themis breaks it down into parallel research tasks and i
 
 ## How RAG Works Here
 
-Classic RAG: retrieve relevant documents → feed to LLM → generate answer. Themis uses three retrieval layers:
+Three retrieval layers, used together:
 
 1. **ChromaDB (semantic search)** — cases are embedded as vectors. A query like "property dispute with illegal tenant" finds semantically similar judgments even if the exact words don't match
 
@@ -43,8 +43,6 @@ The LLM never answers from memory. Every response is grounded in retrieved case 
 ---
 
 ## Architecture
-
-### Multi-Agent System
 
 A **Planner Agent** receives the user query, breaks it into independent research tasks, and dispatches up to 3 **Base Agents** in parallel. Each Base Agent runs its own agentic loop — picking tools, executing them, and reasoning over results — until it has a confident answer. The Planner then synthesizes all results into a final response.
 
@@ -62,8 +60,6 @@ Base Agent 1    Base Agent 2    Base Agent 3
          Final prediction
 ```
 
-### Tools
-
 Each Base Agent has access to four tools:
 
 | Tool | Purpose |
@@ -73,24 +69,4 @@ Each Base Agent has access to four tools:
 | **bash** | Sandboxed file explorer — ls, grep, find, cat on the data directory |
 | **read_pdf** | Download judgment PDF from S3 and extract full text using PyMuPDF |
 
----
-
-## Tech Stack
-
-| Layer | Technology |
-|-------|-----------|
-| Frontend | Next.js 16, React 19, TypeScript, TailwindCSS 4 |
-| Backend | FastAPI, Python, Uvicorn |
-| LLM | Claude Sonnet 4 via OpenRouter (also supports GPT-4o, Grok) |
-| Semantic search | ChromaDB |
-| Structured queries | DuckDB |
-| PDF extraction | PyMuPDF (fitz) |
-| Storage | AWS S3 (public buckets) |
-| Observability | Langfuse |
-| Concurrency | Python asyncio |
-
----
-
-## Streaming
-
-All agent activity streams to the frontend in real time via Server-Sent Events — tool calls, intermediate results, and token-by-token generation are visible as agents work, before the final answer is assembled.
+LLM: Claude Sonnet 4 via OpenRouter.
